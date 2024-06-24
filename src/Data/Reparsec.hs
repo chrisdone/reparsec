@@ -59,8 +59,14 @@ instance Monad m => Monad (ParserT i e m) where
            failed)
   {-# INLINABLE (>>=) #-}
 
+-- Oh no!
+-- =ghci> runReader (Reparsec.parseOnlyT (do a <- local (+1) ask; b <- ask; pure (a,b)) ['a','b']) 0
+-- Right (1,1)
 instance Monad m => MonadReader r (ParserT i e (ReaderT r m)) where
-  ask = lift ask
+  ask =
+    ParserT
+      (\i pos more done failed ->
+         ReaderT (\r -> runReaderT (done i pos more r) r))
   local f m =
     ParserT
       (\i pos more done failed ->
