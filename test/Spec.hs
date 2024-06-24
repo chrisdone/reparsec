@@ -12,6 +12,9 @@ import Data.Reparsec.List.Char
 import qualified Data.Reparsec.Sequence as Seq
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import qualified Data.Reparsec.Vector as V
+import Data.Vector (Vector)
+import qualified Data.Vector as V
 import Test.Hspec hiding (around)
 
 data ParseError
@@ -246,6 +249,66 @@ spec = do
                 _ -> False)
              True))
   describe
+    "Sequence"
+    (do it
+          "Not more input"
+          (shouldBe
+             (parseVec (V.expect 'a' *> V.expect 'a') (V.fromList "a"))
+             (Left noMoreInputError))
+        it
+          "Not enough input"
+          (shouldBe
+             (case parseVecPartial
+                     (V.expect 'a' *> V.expect 'a')
+                     (V.fromList "a") of
+                Partial {} -> True
+                _ -> False)
+             True)
+        it
+          "Enough input"
+          (shouldBe
+             (case parseVecPartial
+                     (V.around 'a' 'c' (V.expect 'b'))
+                     (V.fromList "abc") of
+                Done {} -> True
+                _ -> False)
+             True)
+        it
+          "Fed input"
+          (shouldBe
+             (case parseVecPartial
+                     (V.expect 'a' *> V.expect 'b')
+                     (V.fromList "a") of
+                Done {} -> True
+                Partial continue ->
+                  case runIdentity (continue (Just (V.fromList "b"))) of
+                    Done {} -> True
+                    _ -> False
+                _ -> False)
+             True)
+        it
+          "Fed input: then finished"
+          (shouldBe
+             (case parseVecPartial
+                     (V.expect 'a' *> V.expect 'b')
+                     (V.fromList "a") of
+                Done {} -> True
+                Partial continue ->
+                  case runIdentity (continue Nothing) of
+                    Failed {} -> True
+                    _ -> False
+                _ -> False)
+             True)
+        it
+          "Failure"
+          (shouldBe
+             (case parseVecPartial
+                     (V.expect 'a' *> V.expect 'b')
+                     (V.fromList "a2") of
+                Failed {} -> True
+                _ -> False)
+             True))
+  describe
     "Transformer"
     (it "Lift" (shouldBe (parseOurs (lift (pure ())) "") (Right ())))
   where
@@ -267,6 +330,16 @@ spec = do
       -> Seq Char
       -> Result Identity (Seq Char) ParseError a
     parseSeqPartial p i = runIdentity (parseResultT p (Just i))
+    parseVec ::
+         ParserT (Vector Char) ParseError Identity a
+      -> Vector Char
+      -> Either ParseError a
+    parseVec p i = runIdentity (parseOnlyT p i)
+    parseVecPartial ::
+         ParserT (Vector Char) ParseError Identity a
+      -> Vector Char
+      -> Result Identity (Vector Char) ParseError a
+    parseVecPartial p i = runIdentity (parseResultT p (Just i))
     parsePeacemeal ::
          ParserT (Seq Char) ParseError Identity a
       -> Seq Char
