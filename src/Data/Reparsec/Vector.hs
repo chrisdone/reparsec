@@ -4,76 +4,12 @@
 module Data.Reparsec.Vector
   ( nextElement
   , lookAhead
-  , expect
-  , around
-  , manyTill
-  , parseConduit
-  , satisfy
-  , satisfy_
   , endOfInput
   ) where
 
-import           Control.Monad.Trans
-import           Data.Conduit
 import           Data.Reparsec
 import           Data.Vector (Vector)
 import qualified Data.Vector as V
-
--- | Produce a stream of outputs from a stream of inputs.
-parseConduit ::
-     Monad m
-  => ParserT (Vector i) e m o
-  -> ConduitT i (Either e o) m ()
-parseConduit parser0 = worker
-  where
-    worker = go (parseResultT parser0)
-    go parser = do
-      v <- await
-      result <- lift (parser (fmap pure v))
-      case result of
-        Done input pos _more parse -> do
-          mapM_ leftover (V.drop pos input)
-          yield (Right parse)
-          worker
-        Failed remaining pos _more errors -> do
-          mapM_ leftover (V.drop pos remaining)
-          yield (Left errors)
-          worker
-        Partial cont ->
-          go cont
-
--- | Wrap around something.
-around ::
-     (UnexpectedToken a1 e, NoMoreInput e, Eq a1, Monad m)
-  => a1
-  -> a1
-  -> ParserT (Vector a1) e m a2
-  -> ParserT (Vector a1) e m a2
-around before after inner = expect before *> inner <* expect after
-
--- | Expect an element.
-expect :: (UnexpectedToken a e, NoMoreInput e, Eq a, Monad m) => a -> ParserT (Vector a) e m ()
-expect a = do
-  a' <- nextElement
-  if a == a'
-    then pure ()
-    else failWith (expectedButGot a a')
-
--- | Expect an element.
-satisfy :: (NoMoreInput e, Eq a, Monad m) => (a -> Either e b) -> ParserT (Vector a) e m b
-satisfy f = do
-  a' <- nextElement
-  case f a' of
-    Left e -> failWith e
-    Right b -> pure b
-
--- | Expect an element.
-satisfy_ :: (NoMoreInput e, Eq a, Monad m) => (a -> Either e b) -> ParserT (Vector a) e m ()
-satisfy_ f = do
-  a' <- nextElement
-  case f a' of
-    Left e -> failWith e
-    Right _b -> pure ()
 
 -- | Try to extract the next element from the input.
 nextElement :: (NoMoreInput e, Monad m) => ParserT (Vector a) e m a
@@ -129,23 +65,3 @@ lookAhead =
          more0
          (\mi _pos more a -> done mi pos more a)
          failed)
-
--- | Run parser p repeatedly until finding the end token, or
--- terminating before @maxItems@.
-manyTill ::
-     (Eq a, Semigroup e, Monad m, NoMoreInput e)
-  => Int
-  -> a
-  -> ParserT (Vector a) e m b
-  -> ParserT (Vector a) e m [b]
-manyTill maxItems endToken elementParser = go maxItems
-  where
-    go 0 = pure []
-    go itemsLeft = do
-      next <- lookAhead
-      if next == endToken
-        then pure []
-        else do
-          element <- elementParser
-          fmap (element :) (go (itemsLeft - 1))
-{-# INLINABLE manyTill #-}
